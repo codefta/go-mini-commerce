@@ -1,0 +1,43 @@
+version: "3"
+services:
+    db:
+        container_name: db
+        build:
+            context: ./db
+        environment:
+            MYSQL_ROOT_PASSWORD: root
+            MYSQL_DATABASE: mini_commerce
+            MYSQL_USER: web
+            MYSQL_PASSWORD: pass
+        ports:
+            - "3306:3306"
+        tty: true
+
+    redis:
+        container_name: temp_db
+        image: redis:alpine
+        command: redis-server /usr/local/etc/redis/redis.conf --requirepass pass
+        ports: 
+        - "6379:6379"
+        volumes: 
+        - $PWD/redis.conf:/usr/local/etc/redis/redis.conf
+
+    app:
+        container_name: app
+        build:
+            context: ./
+        environment: 
+            MYSQL_HOST: db
+            MYSQL_PORT: 3306
+            MYSQL_USER: web
+            MYSQL_PASS: pass
+            MYSQL_DBNAME: mini_commerce
+            REDIS_HOST: temp_db
+            REDIS_PORT: 6379
+            REDIS_PASS: pass
+        ports:
+            - 8080:8080
+        restart: always
+        tty: true
+        depends_on:
+            - db
