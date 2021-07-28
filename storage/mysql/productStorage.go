@@ -14,6 +14,7 @@ func (s *MysqlStorage) GetProducts(limit int) ([]models.Product, error) {
 	if err != nil {
 		return nil, fmt.Errorf("unable to execute query due to: %v", err)
 	}
+
 	defer rows.Close()
 
 	var products []models.Product
@@ -23,6 +24,21 @@ func (s *MysqlStorage) GetProducts(limit int) ([]models.Product, error) {
 		if err != nil {
 			continue
 		}
+
+		queryGetProductCategory := fmt.Sprintf("SELECT categories.category_name FROM product_category INNER JOIN categories ON product_category.category_id = categories.id WHERE product_category.product_id=%d", product.ID)
+		productsCategoryRows, err := s.db.Query(queryGetProductCategory)
+		if err != nil {
+			return nil, fmt.Errorf("unable to execute query due to: %v", err)
+		}
+		defer productsCategoryRows.Close()
+
+		var categories []string
+		for productsCategoryRows.Next() {
+			var category string
+			productsCategoryRows.Scan(&category)
+			categories = append(categories, category)
+		}
+		product.Categories = categories
 
 		products = append(products, product)
 	}
@@ -44,6 +60,22 @@ func (s *MysqlStorage) GetProductById(id int) (*models.Product, error) {
 		return nil, fmt.Errorf("unable to get data due to: %v", err)
 	}
 
+	queryGetProductCategory := fmt.Sprintf("SELECT categories.category_name FROM product_category INNER JOIN categories ON product_category.category_id = categories.id WHERE product_category.product_id=%d", product.ID)
+	productsCategoryRows, err := s.db.Query(queryGetProductCategory)
+	if err != nil {
+		return nil, fmt.Errorf("unable to execute query due to: %v", err)
+	}
+	defer productsCategoryRows.Close()
+
+	var categories []string
+	for productsCategoryRows.Next() {
+		var category string
+		productsCategoryRows.Scan(&category)
+		categories = append(categories, category)
+	}
+
+	product.Categories = categories
+
 	return &product, nil
 }
 
@@ -61,15 +93,57 @@ func (s *MysqlStorage) CheckProductIfExist(id int) (int, error) {
 func (s *MysqlStorage) PostProduct(product models.Product) (*models.Product, error) {
 	timeNow := time.Now().Unix()
 
-	query := `INSERT INTO products(product_name, description, price, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`
-	result, err := s.db.Exec(query, product.ProductName, product.Description, product.Price, timeNow, timeNow)
+	tx, err := s.db.Begin()
 	if err != nil {
+		return nil, fmt.Errorf("unable to insert data due to: %v", err)
+	}
+
+	query := `INSERT INTO products(product_name, description, price, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`
+	result, err := tx.Exec(query, product.ProductName, product.Description, product.Price, timeNow, timeNow)
+	if err != nil {
+		tx.Rollback()
 		return nil, fmt.Errorf("unable to insert data due to: %v", err)
 	}
 
 	id, err := result.LastInsertId()
 	if err != nil {
+		tx.Rollback()
 		return nil, fmt.Errorf("unable to get last inserted id due to: %v", err)
+	}
+	
+	for _, c := range product.Categories {
+		var categoryId int64
+		var categoryName string
+		queryIsCategoyExist := `SELECT id, category_name FROM categories WHERE category_name=?`
+		tx.QueryRow(queryIsCategoyExist, c).Scan(&categoryId, &categoryName)
+		
+		fmt.Println(categoryName)
+		if categoryName == "" {
+			queryInsertCategory := `INSERT INTO categories(category_name) VALUES(?)`
+			result, err := tx.Exec(queryInsertCategory, c)
+			if err != nil {
+				tx.Rollback()
+				return nil, fmt.Errorf("unable to insert category due to: %v", err)
+			}
+			
+			categoryId, err = result.LastInsertId()
+			if err != nil {
+				tx.Rollback()
+				return nil, fmt.Errorf("unable to get last inserted id due to: %v", err)
+			}
+		}
+
+		queryInsertProductCategory := `INSERT INTO product_category(product_id, category_id) VALUES(?, ?)`
+		_, err = tx.Exec(queryInsertProductCategory, id, categoryId)
+		if err != nil {
+			tx.Rollback()
+			return nil, fmt.Errorf("unable to insert category due to: %v", err)
+		}
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		return nil, fmt.Errorf("unable to commit due to: %v", err)
 	}
 
 	product.ID = int(id)
@@ -82,17 +156,56 @@ func (s *MysqlStorage) PostProduct(product models.Product) (*models.Product, err
 func (s *MysqlStorage) UpdateProduct(id int, product models.Product) (*models.Product, error) {
 	timeNow := time.Now().Unix()
 
+	tx, err := s.db.Begin()
+	if err != nil {
+		return nil, fmt.Errorf("unable to insert data due to: %v", err)
+	}
+
 	query := `UPDATE products SET product_name=?, description=?, price=?, updated_at=? WHERE id=?`
-	_, err := s.db.Exec(query, product.ProductName, product.Description, product.Price, timeNow, id)
+	_, err = tx.Exec(query, product.ProductName, product.Description, product.Price, timeNow, id)
 	if err != nil {
 		return nil, fmt.Errorf("unable to update data due to: %v", err)
 	}
 
-	query = `SELECT id, product_name, description, price, created_at, updated_at FROM products where id=?`
-
-	err = s.db.QueryRow(query, id).Scan(&product.ID, &product.ProductName, &product.Description, &product.Price, &product.CreatedAt, &product.UpdatedAt)
+	query = `DELETE FROM product_category WHERE product_id=?`
+	_, err = tx.Exec(query, id)
 	if err != nil {
-		return nil, fmt.Errorf("unable to get data due to: %v", err)
+		tx.Rollback()
+		return nil, fmt.Errorf("unable to delete data due to: %v", err)
+	}
+
+	for _, c := range product.Categories {
+		var categoryId int64
+		var categoryName string
+		queryIsCategoyExist := `SELECT id, category_name FROM categories WHERE category_name=?`
+		tx.QueryRow(queryIsCategoyExist, c).Scan(&categoryId, &categoryName)
+		
+		if categoryName == "" {
+			queryInsertCategory := `INSERT INTO categories(category_name) VALUES(?)`
+			result, err := tx.Exec(queryInsertCategory, c)
+			if err != nil {
+				tx.Rollback()
+				return nil, fmt.Errorf("unable to insert category due to: %v", err)
+			}
+			
+			categoryId, err = result.LastInsertId()
+			if err != nil {
+				tx.Rollback()
+				return nil, fmt.Errorf("unable to get last inserted id due to: %v", err)
+			}
+		}
+
+		queryInsertProductCategory := `INSERT INTO product_category(product_id, category_id) VALUES(?, ?)`
+		_, err = tx.Exec(queryInsertProductCategory, id, categoryId)
+		if err != nil {
+			tx.Rollback()
+			return nil, fmt.Errorf("unable to insert category due to: %v", err)
+		}
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		return nil, fmt.Errorf("unable to commit due to: %v", err)
 	}
 
 	product.ID = id

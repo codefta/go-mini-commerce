@@ -5,21 +5,24 @@ import (
 
 	mysql_storage "github.com/fathisiddiqi/go-mini-commerce/storage/mysql"
 	redis_storage "github.com/fathisiddiqi/go-mini-commerce/storage/redis"
+	"github.com/fathisiddiqi/go-mini-commerce/validator"
 	"github.com/gorilla/mux"
 )
 
 type API struct {
 	storage *mysql_storage.MysqlStorage
 	tempStorage *redis_storage.RedisStorage
+	validate *validator.Validate
 }
 
 type APIConfigs struct {
 	Storage *mysql_storage.MysqlStorage
 	TempStorage *redis_storage.RedisStorage
+	Validate *validator.Validate
 }
 
 func NewAPI(configs APIConfigs) (*API, error) {
-	return &API{storage: configs.Storage, tempStorage: configs.TempStorage}, nil
+	return &API{storage: configs.Storage, tempStorage: configs.TempStorage, validate: configs.Validate}, nil
 }
 
 func (a *API) GetHandler() http.Handler {

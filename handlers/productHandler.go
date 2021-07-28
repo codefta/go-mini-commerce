@@ -25,13 +25,14 @@ func (a *API) GetProducts(w http.ResponseWriter, r *http.Request) {
 			utils.WriteResp(w, utils.NewInternalServerErrorResp(err))
 			return 
 		}
+
+		err = a.tempStorage.SetAllTempProducts("productsAll", products)
+		if err != nil {
+			utils.WriteResp(w, utils.NewInternalServerErrorResp(err))
+			return 
+		}
 	}
 
-	err = a.tempStorage.SaveAllTempProducts("productsAll", products)
-	if err != nil {
-		utils.WriteResp(w, utils.NewInternalServerErrorResp(err))
-		return 
-	}
 
 	utils.WriteResp(w, utils.NewSuccessResp(http.StatusOK, map[string]interface{}{
 		"product": products,
@@ -70,7 +71,7 @@ func (a *API) GetProductById(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) CreateProduct(w http.ResponseWriter, r *http.Request) {
-	var body postBody
+	var body models.ProductForm
 
 	err := json.NewDecoder(r.Body).Decode(&body)
 	if err != nil {
@@ -78,9 +79,11 @@ func (a *API) CreateProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = body.Validate()
+	err = a.validate.ProductValidator(body)
 	if err != nil {
-		utils.WriteResp(w, utils.NewBadRequestErrorResp(err.Error()))
+		var data interface{} = utils.ValidatorError(err)
+		fmt.Println(data)
+		utils.WriteResp(w, utils.NewValidationErrorResp(data))
 		return
 	}
 
@@ -88,6 +91,7 @@ func (a *API) CreateProduct(w http.ResponseWriter, r *http.Request) {
 		ProductName: body.ProductName,
 		Description: body.Description,
 		Price: body.Price,
+		Categories: body.Categories,
 	}
 	
 	productCreated, err := a.storage.PostProduct(product)
@@ -96,7 +100,7 @@ func (a *API) CreateProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	a.tempStorage.DeleteAllTempProductsData([]string{"productsAll", "product"})
+	a.tempStorage.DeleteAllTempProductsData()
 
 	utils.WriteResp(w, utils.NewSuccessResp(http.StatusCreated, map[string]interface{}{
 		"new_product": productCreated,
@@ -106,14 +110,20 @@ func (a *API) CreateProduct(w http.ResponseWriter, r *http.Request) {
 func (a *API) UpdateProduct(w http.ResponseWriter, r *http.Request) {
 	id, _ := strconv.Atoi(mux.Vars(r)["id"])
 
-	var body postBody
+	var body models.ProductForm
 	err := json.NewDecoder(r.Body).Decode(&body)
 	if err != nil {
 		utils.WriteResp(w, utils.NewBadRequestErrorResp(err.Error()))
 		return
 	}
 
-	err = body.Validate()
+	err = a.validate.ProductValidator(body)
+	if err != nil {
+		var data interface{} = utils.ValidatorError(err)
+		utils.WriteResp(w, utils.NewValidationErrorResp(data))
+		return
+	}
+
 	if err != nil {
 		utils.WriteResp(w, utils.NewBadRequestErrorResp(err.Error()))
 		return
@@ -129,6 +139,7 @@ func (a *API) UpdateProduct(w http.ResponseWriter, r *http.Request) {
 		ProductName: body.ProductName,
 		Description: body.Description,
 		Price: body.Price,
+		Categories: body.Categories,
 	}
 	
 	productUpdated, err := a.storage.UpdateProduct(id, product)
@@ -137,7 +148,7 @@ func (a *API) UpdateProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	a.tempStorage.DeleteAllTempProductsData([]string{"productsAll", "product"})
+	a.tempStorage.DeleteAllTempProductsData()
 
 	utils.WriteResp(w, utils.NewSuccessResp(http.StatusOK, map[string]interface{}{
 		"updated_product": productUpdated, 
@@ -159,21 +170,7 @@ func (a *API) DeleteProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	a.tempStorage.DeleteAllTempProductsData([]string{"productsAll", "product"})
+	a.tempStorage.DeleteAllTempProductsData()
 
 	utils.WriteResp(w, utils.NewSuccessResp(http.StatusNoContent, map[string]interface{}{}))
-}
-
-type postBody struct {
-	ProductName		string 	`json:"product_name"`
-	Description		string	`json:"description"`
-	Price			int		`json:"price"`
-}
-
-func (p postBody) Validate() error {
-	if len(p.ProductName) <= 0 {
-		return fmt.Errorf("field `product_name` cannot be empty")
-	}
-
-	return nil
 }

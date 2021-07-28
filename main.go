@@ -8,6 +8,7 @@ import (
 	"github.com/fathisiddiqi/go-mini-commerce/handlers"
 	mysql_storage "github.com/fathisiddiqi/go-mini-commerce/storage/mysql"
 	redis_storage "github.com/fathisiddiqi/go-mini-commerce/storage/redis"
+	"github.com/fathisiddiqi/go-mini-commerce/validator"
 )
 
 const port = ":8080"
@@ -44,9 +45,12 @@ func main() {
 		log.Fatalf("unable to initialize redis due to: %v", err)
 	}
 
+	validate := validator.New()
+
 	api, err := handlers.NewAPI(handlers.APIConfigs{
 		Storage: db,
 		TempStorage: redis,
+		Validate: validate,
 	})
 	if err != nil {
 		log.Fatalf("unable to initialize api due to: %v", err)

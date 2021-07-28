@@ -21,11 +21,12 @@ func NewSuccessResp(statusCode int, data interface{}) APIResp {
 	}
 }
 
-func NewErrorResp(statusCode int, errCode string, message string) APIResp {
+func NewErrorResp(statusCode int, errCode string, message string, data interface{}) APIResp {
 	return APIResp{
 		StatusCode: statusCode,
 		Err: errCode, 
 		Message: message,
+		Data: data,
 	}
 }
 

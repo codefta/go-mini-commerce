@@ -7,7 +7,7 @@ import (
 	"github.com/fathisiddiqi/go-mini-commerce/models"
 )
 
-func (r *RedisStorage) SaveAllTempProducts(key string, products []models.Product) error {
+func (r *RedisStorage) SetAllTempProducts(key string, products []models.Product) error {
 	productsJSON, err := json.Marshal(products)
 	if err != nil {
 		return fmt.Errorf("unable parse to json due to: %v", err)
@@ -67,7 +67,7 @@ func (r *RedisStorage) GetTempProduct(key string) (*models.Product, error) {
 	return &product, nil
 }
 
-func (r *RedisStorage) DeleteAllTempProductsData(keys []string) {
+func (r *RedisStorage) DeleteAllTempProductsData() {
 	var cursor uint64
 	searchPattern := "product*"
 
